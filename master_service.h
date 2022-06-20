@@ -17,7 +17,7 @@ class MasterServer
     //master_server初始化
     int init();
     //获取数据分布
-    EndPoint GetDistribute(sockaddr_in client_addr, std::string key);
+    std::string GetDistribute(sockaddr_in client_addr, std::string key);
     //新的cache_server注册
     int Register(EndPoint cache_server_addr, int cfd);
     //心跳检测

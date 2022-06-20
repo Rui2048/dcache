@@ -43,9 +43,13 @@ int MasterServer::epollDelfd(int fd)
     return 0;
 }
 
-EndPoint MasterServer::GetDistribute(sockaddr_in client_addr, std::string key)
+std::string MasterServer::GetDistribute(sockaddr_in client_addr, std::string key)
 {
-
+    std::string ip_port = masterHash.conhash_get_CacheServer(key);
+    if (ip_port == "NULL")
+    {
+        
+    }
 }
 
 int MasterServer::Register(EndPoint cache_server, int cfd)
