@@ -48,9 +48,29 @@ EndPoint MasterServer::GetDistribute(sockaddr_in client_addr, std::string key)
 
 }
 
-int MasterServer::Register(EndPoint cache_server)
+int MasterServer::Register(EndPoint cache_server, int cfd)
 {
-
+    std::string cache_server_str = Endpoint2Str(cache_server);
+    //1、在连接列表中插入新的连接
+    map<EndPoint, int> notity = connectionMap; //用于通知迁移数据
+    m_conn_lock.lock();
+    auto ret = connectionMap.insert({cache_server, cfd});
+    m_conn_lock.unlock();
+    if (ret.second == false) 
+    {
+        LOG_ERROR("connctionMap insert failed on cache server : %s : %d", cache_server.ip, cache_server.port);
+        return -1;
+    }
+    //2、通知迁移数据
+    for (auto iter : notity) 
+    {
+        int fd = iter.second;
+        char buf[1024];
+        strcpy(buf, cache_server_str.c_str());
+        send(fd, buf, sizeof(buf), 0);
+    }
+    //3、将新的cache_server添加到一致性哈希
+    masterHash.conhash_add_CacheServer(cache_server_str);
 }
 
 int MasterServer::HeartBeat()
@@ -78,7 +98,6 @@ int MasterServer::EventLoop()
         std::cout << "udp addr bind failed:\n";
         return -1; 
     }
-    
     
     epfd = epoll_create(5);
     if (epfd == -1) 

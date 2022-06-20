@@ -5,8 +5,10 @@
 #include <sys/epoll.h>
 #include <list>
 #include <string>
+#include <map>
 #include "endPoint.h"
 #include "log/log.h"
+#include "consistent_hash.h"
 
 //master_server类
 class MasterServer
@@ -17,11 +19,9 @@ class MasterServer
     //获取数据分布
     EndPoint GetDistribute(sockaddr_in client_addr, std::string key);
     //新的cache_server注册
-    int Register(EndPoint cache_server);
+    int Register(EndPoint cache_server_addr, int cfd);
     //心跳检测
     int HeartBeat();
-    
-
 
     //master_server的事件循环
     int EventLoop();
@@ -32,6 +32,11 @@ class MasterServer
     int epollAddfd(int fd); //向epoll中添加文件描述符
     int epollDelfd(int fd); //从epoll中删除文件描述符
 
+    dcache::con_hash masterHash;  //一致性哈希
+
+    //与cache_server之间的通信
+    locker m_conn_lock;  //新cache_server注册时的互斥访问
+    std::map<EndPoint, int> connectionMap;  //cache_server的ip+port -> socket fd;
 
     //与client之间的udp通信
     private:
@@ -52,6 +57,7 @@ class MasterServer
     {
         sockaddr_in client_addr; //发送请求的客户端地址结构
         std::string key;  //请求查询的key
+        Request(sockaddr_in addr, std::string k) : client_addr(addr), key(k){}
     };
     int m_thread_number = 8;        //线程池中的线程数
     int m_max_requests = 20;         //请求队列中允许的最大请求数
