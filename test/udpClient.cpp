@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h> //for sleep()
+#include <iostream>
 
 int main()
 {
@@ -31,7 +32,8 @@ int main()
 
     int num = 0;
     while (1) {
-        sprintf(buf, "hello udp %d\n", num++);
+        std::cin>>buf;
+        //sprintf(buf, "hello udp %d\n", num++);
         sendto(cfd, buf, strlen(buf) + 1, 0, (sockaddr*)(&server_addr), sizeof (server_addr));
 
         memset(buf, 0, sizeof(buf));

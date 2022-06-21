@@ -6,18 +6,25 @@
 #include <list>
 #include <string>
 #include <map>
-#include "endPoint.h"
-#include "log/log.h"
-#include "consistent_hash.h"
+#include "../endPoint.h"
+#include "../log/log.h"
+#include "../consistent_hash.h"
+
+namespace Request{
+    #define REGISTER 0 //注册
+    #define GETDISTRIBUTE 1 //获取分布
+}
 
 //master_server类
 class MasterServer
 {
     public:
+    MasterServer(){}
+    ~MasterServer();
     //master_server初始化
     int init();
     //获取数据分布
-    std::string GetDistribute(sockaddr_in client_addr, std::string key);
+   int GetDistribute(sockaddr_in client_addr, std::string key);
     //新的cache_server注册
     int Register(EndPoint cache_server_addr, int cfd);
     //心跳检测
@@ -35,8 +42,11 @@ class MasterServer
     dcache::con_hash masterHash;  //一致性哈希
 
     //与cache_server之间的通信
+    int lfd;
     locker m_conn_lock;  //新cache_server注册时的互斥访问
-    std::map<EndPoint, int> connectionMap;  //cache_server的ip+port -> socket fd;
+    std::map<std::string, int> connectionMap;  //cache_server的ip+port -> socket fd;
+    int port_tcp = 7080;
+    sockaddr_in master_tcp_addr;
 
     //与client之间的udp通信
     private:
@@ -55,9 +65,14 @@ class MasterServer
     //工作队列中的数据类型，client_addr和key
     struct Request
     {
+        int request_type;
         sockaddr_in client_addr; //发送请求的客户端地址结构
         std::string key;  //请求查询的key
-        Request(sockaddr_in addr, std::string k) : client_addr(addr), key(k){}
+        int cfd;
+        Request(int type, sockaddr_in addr, std::string k, int fd = -1) :
+        request_type(type), 
+        client_addr(addr), 
+        key(k), cfd(fd) {}
     };
     int m_thread_number = 8;        //线程池中的线程数
     int m_max_requests = 20;         //请求队列中允许的最大请求数
