@@ -44,7 +44,7 @@ static std::string sock_addr2str(sockaddr_in addr)
 {
     std::string addr_str = inet_ntoa(addr.sin_addr);
     addr_str += ':';
-    addr_str += port2str(addr.sin_port);
+    addr_str += port2str(ntohs(addr.sin_port));
     return addr_str;
 }
 
@@ -52,7 +52,7 @@ static std::string endpoint2str(EndPoint point)
 {
     std::string res(point.ip);
     res += ':';
-    res += port2str(point.port);
+    res += port2str(ntohs(point.port));
     return res;
 }
 

@@ -14,7 +14,7 @@ MasterServer::~MasterServer()
 int MasterServer::init()
 {
     //初始化日志：默认为异步日志,阻塞队列的容量为100
-    Log::get_instance()->init("./log", m_close_log, 8000, 50000, 0);
+    Log::get_instance()->init("./Log/log", m_close_log, 8000, 50000, 0);
     //初始化线程池
     threadInit(m_thread_number, m_max_requests);
 
@@ -54,7 +54,9 @@ int MasterServer::epollDelfd(int fd)
 int MasterServer::GetDistribute(sockaddr_in client_addr, std::string key)
 {
     std::string client_addr_str = sock_addr2str(client_addr);
+    hash_mutex.lock();
     std::string ip_port = masterHash.conhash_get_CacheServer(key);
+    hash_mutex.unlock();
     char buf[1024];
     strcpy(buf, ip_port.c_str());
     if (ip_port == "NULL") {
@@ -68,29 +70,36 @@ int MasterServer::GetDistribute(sockaddr_in client_addr, std::string key)
     return 1;
 }
 
-int MasterServer::Register(EndPoint cache_server, int cfd)
+int MasterServer::Register(sockaddr_in cache_server, int cfd)
 {
-    std::string cache_server_str = endpoint2str(cache_server);
+    std::string cache_server_str = sock_addr2str(cache_server);
     //1、在连接列表中插入新的连接
-    map<std::string, int> notity = connectionMap; //用于通知迁移数据
+    map<std::string, int> notity = registedMap; //用于通知迁移数据
     m_conn_lock.lock();
-    auto ret = connectionMap.insert({cache_server_str, cfd});
+    auto ret = registedMap.insert({cache_server_str, cfd});
     m_conn_lock.unlock();
     if (ret.second == false) 
     {
-        LOG_ERROR("connctionMap insert failed on cache server : %s : %d", cache_server.ip.c_str(), cache_server.port);
+        LOG_ERROR("registedMap insert failed on cache server : %s", cache_server_str);
         return -1;
     }
     //2、通知迁移数据
+    char buf[1024];
+    sprintf(buf, "%d\n", MOVE_DATA);
+    for (auto iter : registedMap)
+    {
+        sprintf(buf, iter.first.c_str());
+        sprintf(buf, "\n");
+    }
     for (auto iter : notity) 
     {
         int fd = iter.second;
-        char buf[1024];
-        strcpy(buf, cache_server_str.c_str());
-        send(fd, buf, sizeof(buf), 0);
+        send(fd, buf, strlen(buf) + 1, 0);
     }
     //3、将新的cache_server添加到一致性哈希
+    hash_mutex.lock();
     masterHash.conhash_add_CacheServer(cache_server_str);
+    hash_mutex.unlock();
     //std::cout << cache_server_str << std::endl;
     LOG_INFO("new cache_server regist : %s", cache_server_str.c_str());
     return 1;
@@ -173,16 +182,21 @@ int MasterServer::EventLoop()
     int len = sizeof(client_udp_addr);
     while (!shutdown) 
     {
-        int num = epoll_wait(epfd, evs, ev_size, -1);
+        int num = epoll_wait(epfd, evs, ev_size, 0); //不阻塞
+        if (num == -1)
+        {
+            LOG_ERROR("epoll waited failed");
+            return -1;
+        }
         for (int i = 0; i < num; i++) 
         {
+            memset(buf, 0, sizeof(buf));
             int cur_fd = evs[i].data.fd;
             //处理client的请求
             if (cur_fd == master_client_sockfd)
             {
                 int rlen = recvfrom(cur_fd, buf, sizeof(buf), 0, (sockaddr*)(&client_udp_addr), (socklen_t*)&len);
                 std::string ip_port = sock_addr2str(client_udp_addr);
-                //std::cout << ip_port << std::endl;
                 //LOG_INFO("receive from %s request key : %s", ip_port.c_str(), buf);;
                 
                 std::string key = buf;
@@ -199,23 +213,47 @@ int MasterServer::EventLoop()
                 strcpy(msg, buf);
                 sendto(master_client_sockfd, msg, strlen(msg) + 1, 0, (sockaddr*)&client_udp_addr, sizeof(client_udp_addr));*/
             }
-            //新的cache_server请求注册
+            //新的cache_server请求连接
             else if (cur_fd == lfd)
             {
-                struct sockaddr_in client_address;
-                socklen_t client_addrlength = sizeof(client_address);
-                int cfd = accept(cur_fd, (struct sockaddr *)&client_address, &client_addrlength);
+                struct sockaddr_in client_addr;
+                socklen_t client_addrlength = sizeof(client_addr);
+                int cfd = accept(cur_fd, (struct sockaddr *)&client_addr, &client_addrlength);
                 if (cfd < 0)
                 {
                     LOG_ERROR("%s:errno is:%d", "accept error", errno);
                     return -1;
                 }
-                std::string ip_port = sock_addr2str(client_address);
-                bool ret = append(Request(REGISTER, client_address, "", cfd)); //将客户端请求加入请求队列
-                if (ret ==false) 
-                {
-                    LOG_ERROR("threadpool append failed on register request from %s with key %s", ip_port, buf);
-                    return -1;
+                epollAddfd(cfd);
+                connectedMap.insert({cfd, client_addr});
+                std::string str_client_addr = sock_addr2str(client_addr);
+                LOG_INFO("cache_server %s connected", str_client_addr.c_str());
+            }
+            else
+            {
+                int len = recv(cur_fd, buf, sizeof(buf), 0);
+                sockaddr_in client_addr = connectedMap[cur_fd];
+                std::string str_client_addr = sock_addr2str(client_addr);
+                //std::cout << str_client_addr << std::endl;
+
+                if (len < 0) {
+
+                }
+                else if (len == 0) {
+                    LOG_WARN("cache_server %s disconnected", str_client_addr.c_str());
+                    epollDelfd(cur_fd);
+                    connectedMap.erase(cur_fd);
+                    registedMap.erase(str_client_addr);
+                }
+                else {
+                    std::cout << atoi(buf) << std::endl;
+                    client_addr.sin_port = htons(atoi(buf));
+                    bool ret = append(Request(REGISTER, client_addr, "", cur_fd)); //将客户端请求加入请求队列
+                    if (ret ==false) 
+                    {
+                        LOG_ERROR("threadpool append failed on register request from %s with listen port %s", str_client_addr, buf);
+                        return -1;
+                    }
                 }
             }
         }
@@ -275,9 +313,7 @@ void MasterServer::run()
         case REGISTER:
         {
             //std::cout << "register" << std::endl;
-            std::string ip_port = sock_addr2str(request.client_addr);
-            EndPoint point = str2endpoint(ip_port);
-            Register(point, request.cfd);
+            Register(request.client_addr, request.cfd);
             break;
         }
         default:

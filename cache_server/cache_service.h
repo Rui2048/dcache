@@ -5,19 +5,55 @@
 #include <sys/epoll.h>
 #include <list>
 #include <string>
+#include <vector>
 #include <map>
+#include <unordered_set>
+#include <thread>
+#include <unistd.h>
+#include <stdlib.h>
 #include "../endPoint.h"
 #include "../log/log.h"
 #include "../consistent_hash.h"
+#include "lru.h"
+#include "../config.h"
+
+class CacheServer;
+
+struct Arg_move{
+    CacheServer *server;
+    std::vector<std::string> ip_port_str;
+};
 
 //cache_server类
 class CacheServer
 {
     public:
-    CacheServer(){}
+    CacheServer();
     ~CacheServer();
     //初始化cache_server
     int init();
+    void setPort(int port) {cache_server_port = port;}  //设置监听端口
+    int connToMaster();  //连接到master_server -- 注册自己
+    int startListen();  //开启监听
+    int eventLoop();  //开启事件循环
+    int getValue(std::string key);
+    int setValue(std::string key);
+    int getBackupValue(std::string key);
+    int setBuckupValue(std::string key);
+    static void *move_worker(void *arg);
+    void move(std::vector<std::string> ip_port_str);
+    int dealwithMasterMsg(int cur_fd);
+    int dealwithClientMsg(int cfd);
+    int dealwithListenMsg();
+
+    //LRU
+    int lru_size = 5;
+    ThreadSafeLRUCache<std::string, std::string> lru;
+    ThreadSafeLRUCache<std::string, std::string> lru_backup;
+
+    //一致性哈希
+    con_hash cacheServerHash;
+    locker hash_mutex;
     
     //epoll相关
     private:
@@ -29,6 +65,19 @@ class CacheServer
     private:
     int m_close_log = 0;  // 0:开启日志  1:关闭日志
     //int m_log_write_model = 0;  // 0:异步日志  1:同步日志
+
+    //与master_server连接相关
+    int master_sockfd;
+    sockaddr_in master_server_sockaddr;
+    int master_port = 7010; //master_server的端口
+
+    //与client连接, 更新备份
+    int lfd;
+    sockaddr_in cache_server_sockaddr;
+    int cache_server_port; //cache_server本地监听默认端口6000
+
+    unordered_set<int> sockfd_set;
+    locker sockfd_mutex;
 
     //线程池
     private:
@@ -63,6 +112,5 @@ class CacheServer
     private:
     bool shutdown = false; //true:关闭服务器  false:不关闭
 };
-
 
 #endif //CACHE_SERVICE

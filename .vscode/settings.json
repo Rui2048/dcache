@@ -40,6 +40,8 @@
         "tuple": "cpp",
         "typeinfo": "cpp",
         "utility": "cpp",
-        "cerrno": "cpp"
+        "cerrno": "cpp",
+        "unordered_set": "cpp",
+        "functional": "cpp"
     }
 }

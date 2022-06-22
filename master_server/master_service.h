@@ -9,6 +9,7 @@
 #include "../endPoint.h"
 #include "../log/log.h"
 #include "../consistent_hash.h"
+#include "../config.h"
 
 namespace Request{
     #define REGISTER 0 //注册
@@ -26,7 +27,7 @@ class MasterServer
     //获取数据分布
    int GetDistribute(sockaddr_in client_addr, std::string key);
     //新的cache_server注册
-    int Register(EndPoint cache_server_addr, int cfd);
+    int Register(sockaddr_in cache_server, int cfd);
     //心跳检测
     int HeartBeat();
 
@@ -39,13 +40,16 @@ class MasterServer
     int epollAddfd(int fd); //向epoll中添加文件描述符
     int epollDelfd(int fd); //从epoll中删除文件描述符
 
-    dcache::con_hash masterHash;  //一致性哈希
+    con_hash masterHash;  //一致性哈希
+    locker hash_mutex;
 
     //与cache_server之间的通信
     int lfd;
     locker m_conn_lock;  //新cache_server注册时的互斥访问
-    std::map<std::string, int> connectionMap;  //cache_server的ip+port -> socket fd;
-    int port_tcp = 7080;
+    std::map<std::string, int> registedMap;  //已经注册的cache_server的ip+port -> socket fd;
+    std::map<int, sockaddr_in> connectedMap; //已经注册的cache_server的sockfd -> sockaddr_in
+
+    int port_tcp = 7010;  //master_server默认监听端口7010
     sockaddr_in master_tcp_addr;
 
     //与client之间的udp通信

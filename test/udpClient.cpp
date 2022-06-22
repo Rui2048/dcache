@@ -24,9 +24,13 @@ int main()
     sockaddr_in client_addr; //不手动绑定，随机生成
     client_addr.sin_family = AF_INET;
     client_addr.sin_port = htons(6000);
-    inet_pton(AF_INET, "192.168.200.2", &client_addr.sin_addr.s_addr);
-    bind(cfd, (sockaddr*)(&client_addr), sizeof(client_addr));
-
+    inet_pton(AF_INET, "127.0.0.2", &client_addr.sin_addr.s_addr);
+    int ret = bind(cfd, (sockaddr*)(&client_addr), sizeof(client_addr));
+    if (ret == -1)
+    {
+        printf("udp addr bind failed, errno is %d", errno);
+        return -1; 
+    }
     
     char buf[1024];
 
@@ -37,9 +41,12 @@ int main()
         sendto(cfd, buf, strlen(buf) + 1, 0, (sockaddr*)(&server_addr), sizeof (server_addr));
 
         memset(buf, 0, sizeof(buf));
-        int rlen = recvfrom(cfd, buf, sizeof(buf), 0, nullptr, nullptr);
+        sockaddr_in addr;
+        socklen_t addr_len = sizeof(addr);
+        int rlen = recvfrom(cfd, buf, sizeof(buf), 0, (sockaddr*)(&addr), &addr_len);
+        char *ip_port = inet_ntoa(addr.sin_addr);
         if (rlen > 0)
-            printf("receive from server : %s", buf);
+            printf("from server %s:%d, ret : %s", ip_port, ntohs(addr.sin_port), buf);
         else
             printf("nothing received...\n");
         sleep(1);

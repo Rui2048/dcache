@@ -4,8 +4,6 @@
 #include <unordered_map>
 #include <mutex>
 
-namespace dcache
-{
   class con_hash
   {
   public:
@@ -89,4 +87,3 @@ namespace dcache
 
     std::mutex node_mutex;
   };
-}
