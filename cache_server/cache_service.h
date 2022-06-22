@@ -19,11 +19,6 @@
 
 class CacheServer;
 
-struct Arg_move{
-    CacheServer *server;
-    std::vector<std::string> ip_port_str;
-};
-
 //cache_server类
 class CacheServer
 {
@@ -40,7 +35,7 @@ class CacheServer
     int setValue(std::string key);
     int getBackupValue(std::string key);
     int setBuckupValue(std::string key);
-    static void *move_worker(void *arg);
+    static void *move_worker(CacheServer *server, std::vector<std::string> ip_port_str);
     void move(std::vector<std::string> ip_port_str);
     int dealwithMasterMsg(int cur_fd);
     int dealwithClientMsg(int cfd);
@@ -52,7 +47,7 @@ class CacheServer
     ThreadSafeLRUCache<std::string, std::string> lru_backup;
 
     //一致性哈希
-    con_hash cacheServerHash;
+    con_hash *cacheServerHash;
     locker hash_mutex;
     
     //epoll相关
@@ -73,8 +68,9 @@ class CacheServer
 
     //与client连接, 更新备份
     int lfd;
-    sockaddr_in cache_server_sockaddr;
+    sockaddr_in cache_server_sockaddr; //cache_server本地监听地址
     int cache_server_port; //cache_server本地监听默认端口6000
+    std::string local_addr;
 
     unordered_set<int> sockfd_set;
     locker sockfd_mutex;

@@ -85,15 +85,16 @@ int MasterServer::Register(sockaddr_in cache_server, int cfd)
     }
     //2、通知迁移数据
     char buf[1024];
-    sprintf(buf, "%d\n", MOVE_DATA);
+    std::string msg;
     for (auto iter : registedMap)
     {
-        sprintf(buf, iter.first.c_str());
-        sprintf(buf, "\n");
+        msg += iter.first;
+        msg += "\n";
     }
     for (auto iter : notity) 
     {
         int fd = iter.second;
+        sprintf(buf, "%s\n%s",MOVE_DATA, msg.c_str());
         send(fd, buf, strlen(buf) + 1, 0);
     }
     //3、将新的cache_server添加到一致性哈希
@@ -246,7 +247,6 @@ int MasterServer::EventLoop()
                     registedMap.erase(str_client_addr);
                 }
                 else {
-                    std::cout << atoi(buf) << std::endl;
                     client_addr.sin_port = htons(atoi(buf));
                     bool ret = append(Request(REGISTER, client_addr, "", cur_fd)); //将客户端请求加入请求队列
                     if (ret ==false) 

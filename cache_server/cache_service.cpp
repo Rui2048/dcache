@@ -89,7 +89,6 @@ int CacheServer::startListen()
         LOG_ERROR("lfd create failed");
         return -1;
     }
-    sockaddr_in cache_server_addr;
     cache_server_sockaddr.sin_family = AF_INET;
     cache_server_sockaddr.sin_addr.s_addr = htonl(INADDR_ANY);
     cache_server_sockaddr.sin_port = htons(cache_server_port);
@@ -110,6 +109,7 @@ int CacheServer::startListen()
     epollAddfd(lfd);
     if (ret == -1) return -1;
     LOG_ERROR("cache_server start listen success");
+    local_addr = sock_addr2str(cache_server_sockaddr);
     return 0;
 }
 
@@ -169,14 +169,49 @@ int CacheServer::setBuckupValue(std::string key)
     
 }
 
-void *CacheServer::move_worker(void *arg)
+void *CacheServer::move_worker(CacheServer *server, std::vector<std::string> ip_ports)
 {   
-    Arg_move *arg_ = (Arg_move*)arg;
-    arg_->server->move(arg_->ip_port_str);
+    server->move(ip_ports);
 }
 
-void CacheServer::move(std::vector<std::string> ip_port_str)
+void CacheServer::move(std::vector<std::string> ip_ports)
 {
+    //根据目前在线的cache_server重新构建一致性哈希
+    hash_mutex.lock();
+    if (cacheServerHash != nullptr) {
+        delete cacheServerHash;
+    }
+    cacheServerHash = new con_hash;
+    for (std::string ip_port : ip_ports) {
+        cacheServerHash->conhash_add_CacheServer(ip_port);
+        LOG_INFO("cache_server conhash add ip_port %s", ip_port.c_str());
+    }
+    hash_mutex.unlock();
+    std::vector<std::string> keys = lru.lru_keys_oneshot();
+    for(auto key : keys)
+        {
+            //依次将key标记为dirty
+            if(lru.hasKey(key))
+            {
+                LOG_INFO("Move:  key still in local lru : %s", key.c_str());
+                std::string value = lru.get(key);
+                //计算新的ip地址
+                std::string newAddr = cacheServerHash->conhash_get_CacheServer(key);
+                //如果需要迁移
+                if(newAddr != local_addr)
+                {
+                    LOG_INFO( "Move:  key %s has to move to new address : %s", key.c_str(), newAddr.c_str());
+                    
+                    
+                }
+                else
+                {
+                    LOG_INFO("Move:  key %s do not has to move", key.c_str())
+                }
+                    
+            }
+        }
+        LOG_INFO("End move");
 
 }
 
@@ -197,11 +232,12 @@ int CacheServer::dealwithMasterMsg(int cur_fd)
     }
     std::string temp;
     int i = 0;
-    while (buf[i] != '\n')
+    while (buf[i] != '\n') {
         temp += buf[i++];
+    }
     if (temp == MOVE_DATA)
     {
-        LOG_INFO("start move data %s", buf);
+        LOG_INFO("start move data");
         std::vector<std::string> ip_ports;
         i++;
         temp = "";
@@ -213,12 +249,9 @@ int CacheServer::dealwithMasterMsg(int cur_fd)
             else {
                 temp += buf[i];
             }
+            i++;
         }
-        
-        Arg_move *arg = new Arg_move;
-        arg->server = this;
-        arg->ip_port_str = ip_ports;
-        std::thread t(move_worker, arg);
+        std::thread t(move_worker, this, ip_ports);
         t.detach();
     }
     
