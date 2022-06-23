@@ -23,7 +23,7 @@ int main()
     //设置客户端的ip
     sockaddr_in client_addr; //不手动绑定，随机生成
     client_addr.sin_family = AF_INET;
-    client_addr.sin_port = htons(6000);
+    client_addr.sin_port = htons(5000);
     inet_pton(AF_INET, "127.0.0.2", &client_addr.sin_addr.s_addr);
     int ret = bind(cfd, (sockaddr*)(&client_addr), sizeof(client_addr));
     if (ret == -1)

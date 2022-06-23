@@ -31,13 +31,13 @@ class CacheServer
     int connToMaster();  //连接到master_server -- 注册自己
     int startListen();  //开启监听
     int eventLoop();  //开启事件循环
-    int getValue(std::string key);
-    int setValue(std::string key);
-    int getBackupValue(std::string key);
-    int setBuckupValue(std::string key);
+    int getValue(std::string key, int cfd, std::string client_addr);
+    int setValue(std::string key, std::string value, std::string client_addr);
+    int getBackupValue(std::string key, int cfd, std::string client_addr);
+    int setBackupValue(std::string key, std::string value, std::string client_addr);
     static void *move_worker(CacheServer *server, std::vector<std::string> ip_port_str);
     void move(std::vector<std::string> ip_port_str);
-    int dealwithMasterMsg(int cur_fd);
+    int dealwithMasterMsg();
     int dealwithClientMsg(int cfd);
     int dealwithListenMsg();
 
@@ -45,6 +45,9 @@ class CacheServer
     int lru_size = 5;
     ThreadSafeLRUCache<std::string, std::string> lru;
     ThreadSafeLRUCache<std::string, std::string> lru_backup;
+    locker lru_mutex; //move的时候不能set
+    locker lru_backup_mutex; //重建备份的时候不要读备份表
+
 
     //一致性哈希
     con_hash *cacheServerHash;
@@ -72,7 +75,8 @@ class CacheServer
     int cache_server_port; //cache_server本地监听默认端口6000
     std::string local_addr;
 
-    unordered_set<int> sockfd_set;
+    std::map<int, std::string> connectedMap;
+    //unordered_set<int> sockfd_set;
     locker sockfd_mutex;
 
     //线程池
@@ -80,14 +84,15 @@ class CacheServer
     //工作队列中的数据类型，client_addr和key
     struct Request
     {
-        int request_type;
-        sockaddr_in client_addr; //发送请求的客户端地址结构
+        std::string request_type;
+        std::string client_addr; //发送请求的客户端地址结构
         std::string key;  //请求查询的key
+        std::string value;
         int cfd;
-        Request(int type, sockaddr_in addr, std::string k, int fd = -1) :
+        Request(std::string type, std::string addr, std::string k, std::string v, int fd = -1) :
         request_type(type), 
         client_addr(addr), 
-        key(k), cfd(fd) {}
+        key(k), value(v), cfd(fd) {}
     };
     int m_thread_number = 8;        //线程池中的线程数
     int m_max_requests = 20;         //请求队列中允许的最大请求数

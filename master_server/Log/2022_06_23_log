@@ -1,0 +1,18 @@
+2022-06-23 11:19:23.720171 [info]: master_server init sucessfully!
+2022-06-23 11:19:26.997968 [info]: cache_server 127.0.0.1:37326 connected
+2022-06-23 11:19:26.998099 [info]: new cache_server regist : 127.0.0.1:6001
+2022-06-23 11:19:31.438453 [info]: cache_server 127.0.0.1:37328 connected
+2022-06-23 11:19:31.438580 [info]: new cache_server regist : 127.0.0.1:6003
+2022-06-23 11:19:47.299463 [warn]: cache_server 127.0.0.1:37328 disconnected
+2022-06-23 11:19:48.219859 [warn]: cache_server 127.0.0.1:37326 disconnected
+2022-06-23 11:23:47.409234 [info]: master_server init sucessfully!
+2022-06-23 11:23:51.073164 [info]: cache_server 127.0.0.1:37346 connected
+2022-06-23 11:23:51.073288 [info]: new cache_server regist : 127.0.0.1:6001
+2022-06-23 11:23:53.778165 [info]: cache_server 127.0.0.1:37348 connected
+2022-06-23 11:23:53.778311 [info]: new cache_server regist : 127.0.0.1:6003
+2022-06-23 11:24:04.205574 [info]: client 127.0.0.2:6000 get distribute success, return 127.0.0.1:6003
+2022-06-23 11:24:49.525332 [info]: client 127.0.0.2:6000 get distribute success, return 127.0.0.1:6001
+2022-06-23 11:24:55.588887 [info]: client 127.0.0.2:6000 get distribute success, return 127.0.0.1:6003
+2022-06-23 11:25:01.540304 [info]: client 127.0.0.2:6000 get distribute success, return 127.0.0.1:6001
+2022-06-23 11:26:07.091706 [info]: client 127.0.0.2:6000 get distribute success, return 127.0.0.1:6001
+2022-06-23 11:26:10.107204 [info]: client 127.0.0.2:6000 get distribute success, return 127.0.0.1:6003

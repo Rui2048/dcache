@@ -6,8 +6,8 @@ int main(int argc, char *argv[])
     Config config;
     config.parse_arg(argc, argv);
     CacheServer server;
-    server.init();
     server.setPort(config.PORT);
+    server.init();
     int ret;
     ret = server.connToMaster();
     assert(ret == 0);

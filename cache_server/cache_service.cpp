@@ -4,7 +4,8 @@
 #include <string.h>
 
 CacheServer::CacheServer() : 
-lru(lru_size), lru_backup(lru_size)
+lru(lru_size), lru_backup(lru_size),
+cacheServerHash(new con_hash)
 {
     
 }
@@ -46,7 +47,9 @@ int CacheServer::epollDelfd(int fd)
 int CacheServer::init()
 {
     //初始化日志：默认为异步日志,阻塞队列的容量为100
-    Log::get_instance()->init("./Log/log", m_close_log, 8000, 50000, 0);
+    std::string logName = "log_";
+    logName += port2str(cache_server_port);
+    Log::get_instance()->init(logName.c_str(), m_close_log, 8000, 50000, 0);
     //初始化线程池
     threadInit(m_thread_number, m_max_requests);
     //初始化epoll
@@ -131,7 +134,7 @@ int CacheServer::eventLoop()
             int cur_fd = evs[i].data.fd;
             if (cur_fd == master_sockfd) //处理来自master的指令
             {
-                if (dealwithMasterMsg(cur_fd) == -1)
+                if (dealwithMasterMsg() == -1)
                     break;
             }
             else if (cur_fd == lfd) //新的客户端请求或者更新backup
@@ -149,24 +152,91 @@ int CacheServer::eventLoop()
     return -1;
 }
 
-int CacheServer::getValue(std::string key)
+int CacheServer::getValue(std::string key, int cfd, std::string client_addr)
 {
-
+    std::string msg;
+    std::string value;
+    if (lru.hasKey(key) && lru.is_dirty(key)) { //脏数据
+        msg += DIRTY_DATA;
+    }
+    else {
+        if (lru.hasKey(key)) {
+            msg += GET_SUCCESS;
+            msg += "\n";
+            value = lru.get(key);
+            msg += value;
+        }
+        else {
+            msg += DATA_NOT_EXIST;
+        }
+    }
+    char buf[1024];
+    strcpy(buf, msg.c_str());
+    int len = send(cfd, buf, strlen(buf), 0);
+    if (len == -1) {
+        return -1;
+    }
+    LOG_INFO("Get:  getValue success %s, key %s value %s", client_addr.c_str(), key.c_str(), value.c_str());
+    return 0;
 }
 
-int CacheServer::setValue(std::string key)
+int CacheServer::setValue(std::string key, std::string value, std::string client_addr)
 {
-
+    lru_mutex.lock();
+    if (lru.hasKey(key) && lru.is_dirty(key)) {
+        LOG_INFO("Set:  find key %s is dirty", client_addr.c_str(), key.c_str());
+    }
+    /*else if (lru.hasKey(key) && cacheServerHash != nullptr && cacheServerHash->conhash_get_CacheServer(key) != local_addr) {
+        LOG_INFO("Set:  find key %s is dirty", client_addr.c_str(), key.c_str());
+    }*/
+    else {
+        lru.set(key, value);
+        LOG_INFO("Set:  set key %s success value %s", key.c_str(), value.c_str());
+    }
+    lru_mutex.unlock();
+    return 0;
 }
 
-int CacheServer::getBackupValue(std::string key)
+int CacheServer::getBackupValue(std::string key, int cfd, std::string client_addr)
 {
-
+    std::string msg;
+    if (lru_backup.hasKey(key) && lru_backup.is_dirty(key)) { //脏数据
+        msg += DIRTY_DATA;
+    }
+    else {
+        if (lru_backup.hasKey(key)) {
+            msg += GET_SUCCESS;
+            msg += "\n";
+            msg += lru_backup.get(key);
+        }
+        else {
+            msg += DATA_NOT_EXIST;
+        }
+    }
+    char buf[1024];
+    strcpy(buf, msg.c_str());
+    int len = send(cfd, buf, strlen(buf), 0);
+    if (len == -1) {
+        return -1;
+    }
+    return 0;
 }
 
-int CacheServer::setBuckupValue(std::string key)
+int CacheServer::setBackupValue(std::string key, std::string value, std::string client_addr)
 {
-    
+    lru_backup_mutex.lock();
+    if (lru_backup.hasKey(key) && lru_backup.is_dirty(key)) {
+        LOG_INFO("Set:  find key %s is dirty", client_addr.c_str(), key.c_str());
+    }
+    /*else if (lru.hasKey(key) && cacheServerHash != nullptr && cacheServerHash->conhash_get_CacheServer(key) != local_addr) {
+        LOG_INFO("Set:  find key %s is dirty", client_addr.c_str(), key.c_str());
+    }*/
+    else {
+        lru_backup.set(key, value);
+        LOG_INFO("Set:  set key %s success value %s", key.c_str(), value.c_str());
+    }
+    lru_backup_mutex.unlock();
+    return 0;
 }
 
 void *CacheServer::move_worker(CacheServer *server, std::vector<std::string> ip_ports)
@@ -188,8 +258,11 @@ void CacheServer::move(std::vector<std::string> ip_ports)
     }
     hash_mutex.unlock();
     std::vector<std::string> keys = lru.lru_keys_oneshot();
+    lru_mutex.lock();
     for(auto key : keys)
         {
+            int cfd = socket(AF_INET, SOCK_STREAM, 0); //用于cache_server之间交换数据
+            std::string cur_addr;
             //依次将key标记为dirty
             if(lru.hasKey(key))
             {
@@ -201,8 +274,28 @@ void CacheServer::move(std::vector<std::string> ip_ports)
                 if(newAddr != local_addr)
                 {
                     LOG_INFO( "Move:  key %s has to move to new address : %s", key.c_str(), newAddr.c_str());
-                    
-                    
+                    if (newAddr != cur_addr) {
+                        close(cfd);
+                        sockaddr_in addr = str2sock_addr(newAddr);
+                        int ret = connect(cfd, (sockaddr*)(&addr), sizeof(addr));
+                        if (ret == -1) {
+                            LOG_ERROR( "Move:  connect to cache_server : %s failed, errno is %d", newAddr.c_str(), errno);
+                            break;
+                        }
+                        cur_addr = newAddr;
+                    }
+                    std::string msg;
+                    msg += SET_VALUE;
+                    msg += '\n';
+                    msg += key;
+                    char buf[1024];
+                    strcpy(buf, msg.c_str());
+                    int ret = send(cfd, buf, strlen(buf), 0);
+                    if (ret == -1) {
+                        LOG_ERROR( "Move:  send move msg to cache_server : %s failed, errno is %d", newAddr.c_str(), errno);
+                        break;
+                    }
+                    lru.set_dirty(key);
                 }
                 else
                 {
@@ -211,18 +304,19 @@ void CacheServer::move(std::vector<std::string> ip_ports)
                     
             }
         }
+        lru_mutex.unlock();
         LOG_INFO("End move");
 
 }
 
-int CacheServer::dealwithMasterMsg(int cur_fd)
+int CacheServer::dealwithMasterMsg()
 {
     char buf[1024];
     int len = recv(master_sockfd, buf, sizeof(buf), 0);
     if (len == 0) 
     {
         LOG_ERROR("master_server is crashed !!!");
-        epollDelfd(cur_fd);
+        epollDelfd(master_sockfd);
         return -1;
     }
     else if (len == -1) 
@@ -259,7 +353,44 @@ int CacheServer::dealwithMasterMsg(int cur_fd)
 
 int CacheServer::dealwithClientMsg(int cfd)
 {
-
+    char buf[1024];
+    int len = recv(cfd, buf, sizeof(buf), 0);
+    if (len == 0) 
+    {
+        LOG_INFO("cilent or cache_server disconnected %s", connectedMap[cfd].c_str());
+        sockfd_mutex.lock();
+        connectedMap.erase(cfd);
+        sockfd_mutex.unlock();
+        epollDelfd(cfd);
+        return -1;
+    }
+    else if (len == -1) 
+    {
+        LOG_ERROR("recv from master_server failed, errno is %d", errno);
+        return -1;
+    }
+    std::string opt, key, value;
+    int i = 0;
+    while (buf[i] != '\n') {
+        opt += buf[i++];
+    }
+    i++;
+    while (i < len && buf[i] != '\n') {
+        key += buf[i];
+        i++;
+    }
+    if (opt == SET_VALUE || opt == SET_BACKUP_VALUE)
+    while (i < len && buf[i] != '\n') {
+        value += buf[i];
+        i++;
+    }
+    Request request(opt, connectedMap[cfd], key, value, cfd);
+    bool ret = append(request); //将客户端请求加入请求队列
+    if (ret ==false) 
+    {
+        LOG_ERROR("threadpool append failed on request from %s", connectedMap[cfd]);
+        return -1;
+    } 
 }
 
 int CacheServer::dealwithListenMsg()
@@ -272,8 +403,10 @@ int CacheServer::dealwithListenMsg()
         LOG_ERROR("%s:errno is:%d", "accept error", errno);
         return -1;
     }
+    std::string ip_port = sock_addr2str(addr);
     sockfd_mutex.lock();
-    sockfd_set.insert(cfd);
+    //sockfd_set.insert(cfd);
+    connectedMap.insert({cfd, ip_port});
     sockfd_mutex.unlock();
     return 0;
 }
@@ -323,7 +456,35 @@ void CacheServer::run()
         Request request = m_workqueue.front();
         m_workqueue.pop_front();
         m_queuelocker.unlock();
-        
+        std::string opt = request.request_type;
+        std::string key = request.key;
+        std::string value = request.value;
+        std::string client_addr = request.client_addr;
+        int cfd = request.cfd;
+        int ret;
+        if (opt == SET_VALUE) {
+            ret = setValue(key, value, client_addr);
+            if (ret == -1)
+                LOG_ERROR("Set:  %s setValue failed on key %s", client_addr.c_str(), key.c_str());
+        }
+        else if (opt == GET_VALUE) {
+            ret = getValue(key, cfd, client_addr);
+            if (ret == -1)
+                LOG_ERROR("Get:  %s getValue failed on key %s", client_addr.c_str(), key.c_str());
+        }
+        else if (opt == SET_BACKUP_VALUE) {
+            ret = setBackupValue(key, value, client_addr);
+            if (ret == -1)
+                LOG_ERROR("Set:  %s setBackupValue failed on key %s", client_addr.c_str(), key.c_str());
+        }
+        else if (opt == GET_BACKUP_VALUE) {
+            ret = getBackupValue(key, cfd, client_addr);
+            if (ret == -1)
+                LOG_ERROR("Get:  %s getBackupValue failed on key %s", client_addr.c_str(), key.c_str());
+        }
+        else {
+            LOG_ERROR("uknown operation from %s", connectedMap[cfd].c_str());
+        }
     }
 }
 //往工作队列中添加任务

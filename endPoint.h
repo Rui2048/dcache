@@ -48,6 +48,31 @@ static std::string sock_addr2str(sockaddr_in addr)
     return addr_str;
 }
 
+static sockaddr_in str2sock_addr(std::string ip_port)
+{
+    std::string ip;
+    int port = -1;
+    sockaddr_in res;
+    if (!ip_port.empty())
+    {
+        int i = 0;
+        while (i < ip_port.size() && ip_port[i] != ':')
+            ip += ip_port[i++];
+        i++;
+        std::string port_str;
+        while (i < ip_port.size())
+            port_str += ip_port[i++];
+        port = str2port(port_str);
+        if (port != 0)
+        {
+            res.sin_family = AF_INET;
+            res.sin_port = htons(port);
+            inet_pton(AF_INET, ip.c_str(), &res.sin_addr.s_addr);
+        }
+    }
+    return res;
+}
+
 static std::string endpoint2str(EndPoint point)
 {
     std::string res(point.ip);

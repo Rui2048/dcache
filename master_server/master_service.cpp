@@ -321,7 +321,7 @@ void MasterServer::run()
         }
     }
 }
-//往工作队列中添加任务
+//往工作队列中添加任务, 线程安全
 bool MasterServer::append(Request request)
 {
     m_queuelocker.lock();

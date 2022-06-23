@@ -1,0 +1,15 @@
+2022-06-23 11:19:26.997861 [info]: cache_server init sucessfully!
+2022-06-23 11:19:26.997945 [erro]: connect to master success
+2022-06-23 11:19:26.997996 [erro]: cache_server start listen success
+2022-06-23 11:19:31.438553 [info]: start move data
+2022-06-23 11:19:31.438694 [info]: cache_server conhash add ip_port 127.0.0.1:6001
+2022-06-23 11:19:31.438745 [info]: cache_server conhash add ip_port 127.0.0.1:6003
+2022-06-23 11:19:31.438756 [info]: End move
+2022-06-23 11:23:51.073038 [info]: cache_server init sucessfully!
+2022-06-23 11:23:51.073143 [erro]: connect to master success
+2022-06-23 11:23:51.073194 [erro]: cache_server start listen success
+2022-06-23 11:23:53.778282 [info]: start move data
+2022-06-23 11:23:53.778423 [info]: cache_server conhash add ip_port 127.0.0.1:6001
+2022-06-23 11:23:53.778534 [info]: cache_server conhash add ip_port 127.0.0.1:6003
+2022-06-23 11:23:53.778571 [info]: End move
+2022-06-23 11:34:16.219426 [erro]: master_server is crashed !!!
