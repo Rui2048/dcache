@@ -19,6 +19,7 @@ int MasterServer::init()
     threadInit(m_thread_number, m_max_requests);
 
     LOG_INFO("master_server init sucessfully!");
+    return 0;
 }
 
 int MasterServer::epollAddfd(int fd)
@@ -57,61 +58,107 @@ int MasterServer::GetDistribute(sockaddr_in client_addr, std::string key)
     hash_mutex.lock();
     std::string ip_port = masterHash.conhash_get_CacheServer(key);
     hash_mutex.unlock();
-    char buf[1024];
-    strcpy(buf, ip_port.c_str());
     if (ip_port == "NULL") {
         LOG_WARN("client %s get distribute failed, conhash is empty", client_addr_str.c_str());
     }
     else {
         LOG_INFO("client %s get distribute success, return %s", client_addr_str.c_str(), ip_port.c_str());
     }
+    std::string msg;
+    msg += ip_port;
+    if (connectList.isExisted(ip_port)) {
+        msg += '\n';
+        msg += connectList.getNext(ip_port); //备份服务器
+    }
+    char buf[1024];
+    strcpy(buf, msg.c_str()); 
     sendto(master_client_sockfd, buf, strlen(buf), 0, (sockaddr*)(&client_addr), sizeof(client_addr));
-    //sendto(master_client_sockfd, msg, strlen(msg) + 1, 0, (sockaddr*)&client_udp_addr, sizeof(client_udp_addr));
-    return 1;
+    return 0;
 }
 
 int MasterServer::Register(sockaddr_in cache_server, int cfd)
 {
     std::string cache_server_str = sock_addr2str(cache_server);
+    std::string newAddr = connectedMap[cfd];
     //1、在连接列表中插入新的连接
     map<std::string, int> notity = registedMap; //用于通知迁移数据
     m_conn_lock.lock();
-    auto ret = registedMap.insert({cache_server_str, cfd});
+    auto ret = registedMap.insert({newAddr, cfd});
+    listenMap.insert({cfd, cache_server_str});
+    connectList.add(newAddr);
     m_conn_lock.unlock();
     if (ret.second == false) 
     {
-        LOG_ERROR("registedMap insert failed on cache server : %s", cache_server_str);
+        LOG_ERROR("registedMap insert failed on cache server : %s", cache_server_str.c_str());
         return -1;
     }
-    //2、通知迁移数据
-    char buf[1024];
-    std::string msg;
-    for (auto iter : registedMap)
-    {
-        msg += iter.first;
-        msg += "\n";
-    }
-    for (auto iter : notity) 
-    {
-        int fd = iter.second;
-        sprintf(buf, "%s\n%s",MOVE_DATA, msg.c_str());
-        send(fd, buf, strlen(buf) + 1, 0);
-    }
-    //3、将新的cache_server添加到一致性哈希
+    //2、将新的cache_server添加到一致性哈希
     hash_mutex.lock();
     masterHash.conhash_add_CacheServer(cache_server_str);
     hash_mutex.unlock();
-    //std::cout << cache_server_str << std::endl;
-    LOG_INFO("new cache_server regist : %s", cache_server_str.c_str());
-    return 1;
+    //3、通知迁移数据
+    char buf[1024];
+    sprintf(buf, "%s",MOVE_DATA);
+    for (auto iter : notity) 
+    {
+        int fd = iter.second;
+        send(fd, buf, strlen(buf) + 1, 0);
+    }
+    //4、通知cache_server更新哈希
+    UpdateHash();
+    //5、通知迁移备份数据
+    if (connectList.isExisted(newAddr))
+    {
+        //LOG_DEBUG("start notice update backup");
+        std::string prev_server_addr = connectList.getPrev(newAddr);
+        std::string next_server_addr = connectList.getNext(newAddr);
+        int prev_fd = registedMap[prev_server_addr];
+        int next_fd = registedMap[next_server_addr];
+        //LOG_DEBUG("prev_server %s", prev_server_addr.c_str());
+        //LOG_DEBUG("next_server %s", next_server_addr.c_str());
+        if (next_fd != cfd || prev_fd != cfd)
+        {
+            memset(buf, 0, 100);
+            sprintf(buf, "%s\n%s", UPDATE_BACKUP, listenMap[cfd].c_str());
+            send(prev_fd, buf, strlen(buf), 0); //通知前驱服务器开始备份
+            LOG_DEBUG("notice %s Update Backup\n%s", prev_server_addr.c_str(), buf);
+            memset(buf, 0, 100);
+            sprintf(buf, "%s\n%s", UPDATE_BACKUP, listenMap[next_fd].c_str(), buf);
+            send(cfd, buf, strlen(buf), 0); //通知新注册的服务器开始备份
+            LOG_DEBUG("notice %s Update Backup\n%s", newAddr.c_str(), buf);
+        }
+    }
+    LOG_INFO("new cache_server regist : %s total %d", cache_server_str.c_str(), connectList.size());
+    return 0;
 }
 
-int MasterServer::HeartBeat()
+int MasterServer::UpdateHash()
 {
+    //LOG_DEBUG("UpdateHash");
+    char buf[1024];
+    memset(buf, 0, sizeof(buf));
+    std::string msg;
+    m_conn_lock.lock();
+    for (auto iter : listenMap)
+    {
+        msg += iter.second;
+        msg += "\n";
+    }
+    m_conn_lock.unlock();
+    sprintf(buf, "%s\n%s", UPDATE_HASH, msg.c_str());
     
+    for (auto iter : listenMap) 
+    {
+        int fd = iter.first;
+        int len = send(fd, buf, strlen(buf) + 1, 0);
+        if (len == -1) {
+            LOG_WARN("send update_hash to %s failed, errno is %d", iter.second.c_str(), errno);
+        }
+        LOG_DEBUG("notice %s UpdateHash total %d len = %d\n%s", connectedMap[fd].c_str(), (int)listenMap.size(), len, buf);
+    }
 }
 
-int MasterServer::EventLoop()
+int MasterServer::startListen()
 {
     master_client_sockfd = socket(AF_INET, SOCK_DGRAM, 0);
     if (master_client_sockfd == -1) 
@@ -176,11 +223,14 @@ int MasterServer::EventLoop()
         LOG_ERROR("epoll add lfd failed");
         return -1; 
     }
+}
 
+int MasterServer::EventLoop()
+{
     epoll_event evs[1024];
     int ev_size = sizeof(evs) / sizeof(epoll_event);
-    char buf[1024];
     int len = sizeof(client_udp_addr);
+    int ret;
     while (!shutdown) 
     {
         int num = epoll_wait(epfd, evs, ev_size, 0); //不阻塞
@@ -191,73 +241,127 @@ int MasterServer::EventLoop()
         }
         for (int i = 0; i < num; i++) 
         {
-            memset(buf, 0, sizeof(buf));
             int cur_fd = evs[i].data.fd;
-            //处理client的请求
-            if (cur_fd == master_client_sockfd)
+            if (cur_fd == master_client_sockfd) //处理client的请求
             {
-                int rlen = recvfrom(cur_fd, buf, sizeof(buf), 0, (sockaddr*)(&client_udp_addr), (socklen_t*)&len);
-                std::string ip_port = sock_addr2str(client_udp_addr);
-                //LOG_INFO("receive from %s request key : %s", ip_port.c_str(), buf);;
-                
-                std::string key = buf;
-                bool ret = append(Request(GETDISTRIBUTE, client_udp_addr, key)); //将客户端请求加入请求队列
-                if (ret ==false) 
-                {
-                    LOG_ERROR("threadpool append failed on getdistribute request from %s with key %s", ip_port, buf);
-                    return -1;
+                ret = dealwithClient();
+                if (ret == -1) {
+                    LOG_ERROR("dealwith client request failed");
                 }
-
-                //调试用，给客户端一个返回的信息
-                /*char msg[1024];
-                sprintf(msg, "I have received your msg : ");
-                strcpy(msg, buf);
-                sendto(master_client_sockfd, msg, strlen(msg) + 1, 0, (sockaddr*)&client_udp_addr, sizeof(client_udp_addr));*/
             }
-            //新的cache_server请求连接
-            else if (cur_fd == lfd)
+            else if (cur_fd == lfd) //新的cache_server请求连接
             {
-                struct sockaddr_in client_addr;
-                socklen_t client_addrlength = sizeof(client_addr);
-                int cfd = accept(cur_fd, (struct sockaddr *)&client_addr, &client_addrlength);
-                if (cfd < 0)
-                {
-                    LOG_ERROR("%s:errno is:%d", "accept error", errno);
-                    return -1;
+                ret = dealwithNewConn();
+                if (ret == -1) {
+                    LOG_ERROR("dealwith new connection request failed");
                 }
-                epollAddfd(cfd);
-                connectedMap.insert({cfd, client_addr});
-                std::string str_client_addr = sock_addr2str(client_addr);
-                LOG_INFO("cache_server %s connected", str_client_addr.c_str());
             }
-            else
+            else    //处理cache_server的消息
             {
-                int len = recv(cur_fd, buf, sizeof(buf), 0);
-                sockaddr_in client_addr = connectedMap[cur_fd];
-                std::string str_client_addr = sock_addr2str(client_addr);
-                //std::cout << str_client_addr << std::endl;
-
-                if (len < 0) {
-
-                }
-                else if (len == 0) {
-                    LOG_WARN("cache_server %s disconnected", str_client_addr.c_str());
-                    epollDelfd(cur_fd);
-                    connectedMap.erase(cur_fd);
-                    registedMap.erase(str_client_addr);
-                }
-                else {
-                    client_addr.sin_port = htons(atoi(buf));
-                    bool ret = append(Request(REGISTER, client_addr, "", cur_fd)); //将客户端请求加入请求队列
-                    if (ret ==false) 
-                    {
-                        LOG_ERROR("threadpool append failed on register request from %s with listen port %s", str_client_addr, buf);
-                        return -1;
-                    }
+                ret = dealwithCacheServer(cur_fd);
+                if (ret == -1) {
+                    LOG_ERROR("dealwith cache server request failed");
                 }
             }
         }
     }
+}
+
+int MasterServer::dealwithNewConn()
+{
+    struct sockaddr_in client_addr;
+    socklen_t client_addrlength = sizeof(client_addr);
+    int cfd = accept(lfd, (struct sockaddr *)&client_addr, &client_addrlength);
+    if (cfd < 0)
+    {
+        LOG_ERROR("%s:errno is:%d", "accept error", errno);
+        return -1;
+    }
+    std::string str_client_addr = sock_addr2str(client_addr);
+    epollAddfd(cfd);
+    m_conn_lock.lock();
+    connectedMap.insert({cfd, str_client_addr});
+    m_conn_lock.unlock();
+    LOG_INFO("cache_server %s connected", str_client_addr.c_str());
+    return 0;
+}
+
+int MasterServer::dealwithClient()
+{
+    char buf[1024];
+    int len = sizeof(client_udp_addr);
+    int rlen = recvfrom(master_client_sockfd, buf, sizeof(buf), 0, (sockaddr*)(&client_udp_addr), (socklen_t*)&len);
+    std::string ip_port = sock_addr2str(client_udp_addr);
+    std::string key = buf;
+    bool ret = append(Request(GETDISTRIBUTE, client_udp_addr, key)); //将客户端请求加入请求队列
+    if (ret ==false) 
+    {
+        LOG_ERROR("threadpool append failed on getdistribute request from %s with key %s", ip_port, buf);
+        return -1;
+    }
+    return 0;
+    //调试用，给客户端一个返回的信息
+    /*char msg[1024];
+    sprintf(msg, "I have received your msg : ");
+    strcpy(msg, buf);
+    sendto(master_client_sockfd, msg, strlen(msg) + 1, 0, (sockaddr*)&client_udp_addr, sizeof(client_udp_addr));*/
+}
+
+int MasterServer::dealwithCacheServer(int cfd)
+{
+    char buf[1024];
+    memset(buf, 0, sizeof(buf));
+    int len = recv(cfd, buf, sizeof(buf), 0);
+    std::string str_client_addr = connectedMap[cfd];
+    if (len < 0) {
+        LOG_WARN("receive from cache_server %s failed, errno is  %d", str_client_addr.c_str(), errno);
+        return -1;
+    }
+    else if (len == 0) {  //cache_server离线，容灾机制
+        LOG_WARN("cache_server %s disconnected", str_client_addr.c_str());
+        if (connectList.isExisted(str_client_addr)) {
+            std::string prev_server_addr = connectList.getPrev(str_client_addr);
+            std::string next_server_addr = connectList.getNext(str_client_addr);
+            LOG_DEBUG("prev_server %s", prev_server_addr.c_str());
+            LOG_DEBUG("next_server %s", next_server_addr.c_str());
+            int prev_fd = registedMap[prev_server_addr];
+            int next_fd = registedMap[next_server_addr];
+            epollDelfd(cfd);
+            close(cfd);
+            m_conn_lock.lock();
+            connectedMap.erase(cfd);
+            registedMap.erase(str_client_addr);
+            listenMap.erase(cfd);
+            connectList.del(str_client_addr);
+            m_conn_lock.unlock();
+            //通知更新一致性哈希
+            UpdateHash();
+            if (next_fd == cfd || prev_fd == cfd)
+                return 0;
+            //通知恢复备份
+            memset(buf, 0, sizeof(buf));
+            sprintf(buf, "%s", RECOVER_BACKUP);
+            send(next_fd, buf, strlen(buf), 0); //通知后继服务器将备份数据恢复
+            LOG_DEBUG("notic recover backup %s", next_server_addr.c_str());
+            memset(buf, 0, sizeof(buf));
+            sprintf(buf, "%s\n%s", UPDATE_BACKUP, listenMap[next_fd].c_str());
+            send(prev_fd, buf, strlen(buf), 0); //通知前驱服务器重新备份到后继服务器
+            LOG_DEBUG("notic update backup %s", prev_server_addr.c_str());
+        }
+        else
+            LOG_ERROR("cache_server %s not exist", str_client_addr.c_str());
+    }
+    else {
+        sockaddr_in client_listen_addr = str2sock_addr(str_client_addr);
+        client_listen_addr.sin_port = htons(atoi(buf));
+        bool ret = append(Request(REGISTER, client_listen_addr, "", cfd)); //将客户端请求加入请求队列
+        if (ret ==false) 
+        {
+            LOG_ERROR("threadpool append failed on register request from %s with listen port %s", str_client_addr, buf);
+            return -1;
+        }
+    }
+    return 0;
 }
 
 //初始化线程池

@@ -1,7 +1,0 @@
-2022-06-23 11:19:31.438351 [info]: cache_server init sucessfully!
-2022-06-23 11:19:31.438438 [erro]: connect to master success
-2022-06-23 11:19:31.438484 [erro]: cache_server start listen success
-2022-06-23 11:23:53.778039 [info]: cache_server init sucessfully!
-2022-06-23 11:23:53.778153 [erro]: connect to master success
-2022-06-23 11:23:53.778199 [erro]: cache_server start listen success
-2022-06-23 11:34:16.219413 [erro]: master_server is crashed !!!

@@ -35,8 +35,12 @@ class CacheServer
     int setValue(std::string key, std::string value, std::string client_addr);
     int getBackupValue(std::string key, int cfd, std::string client_addr);
     int setBackupValue(std::string key, std::string value, std::string client_addr);
-    static void *move_worker(CacheServer *server, std::vector<std::string> ip_port_str);
-    void move(std::vector<std::string> ip_port_str);
+    int updateHash(std::vector<std::string> ip_port_str);
+    static void *updateBackup(CacheServer *server, std::string ip_port);
+    void update(std::string ip_port);
+    int recoverBackup();
+    static void *move_worker(CacheServer *server);
+    void move();
     int dealwithMasterMsg();
     int dealwithClientMsg(int cfd);
     int dealwithListenMsg();
@@ -47,6 +51,8 @@ class CacheServer
     ThreadSafeLRUCache<std::string, std::string> lru_backup;
     locker lru_mutex; //move的时候不能set
     locker lru_backup_mutex; //重建备份的时候不要读备份表
+    int state = 0; //0:移动lru   1:移动lru_backup
+    int backup_invalid = 0; //0:备份有效   1:备份失效
 
 
     //一致性哈希

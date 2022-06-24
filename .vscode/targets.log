@@ -6,7 +6,7 @@ make all --print-data-base --no-builtin-variables --no-builtin-rules --question
 # This is free software: you are free to change and redistribute it.
 # There is NO WARRANTY, to the extent permitted by law.
 
-# Make data base, printed on Thu Jun 23 11:40:14 2022
+# Make data base, printed on Thu Jun 23 15:05:50 2022
 
 # Variables
 
@@ -29,7 +29,7 @@ VSCODE_LOG_NATIVE = false
 # default
 MAKE_VERSION := 4.1
 # makefile
-CURDIR := /home/yirui/dcache
+CURDIR := /home/yirui/projects/dcache
 # makefile
 SHELL = /bin/sh
 # environment
@@ -55,7 +55,7 @@ LC_NAME = zh_CN.UTF-8
 # environment
 VSCODE_CWD = /home/yirui
 # environment
-SSH_CONNECTION = 192.168.70.1 54972 192.168.70.129 22
+SSH_CONNECTION = 192.168.70.1 65388 192.168.70.129 22
 # environment
 PATH = /home/yirui/.vscode-server/bin/30d9c6cd9483b2cc586687151bcbcd635f373630/bin/remote-cli:/home/yirui/Qt5.9.1/Tools/QtCreator/bin:/home/yirui/Qt5.9.1/5.9.1/gcc_64/bin:usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin
 # environment
@@ -73,9 +73,9 @@ LS_COLORS =
 # environment
 VSCODE_PIPE_LOGGING = true
 # environment
-PWD = /home/yirui/dcache
+PWD = /home/yirui/projects/dcache
 # environment
-VSCODE_IPC_HOOK_CLI = /run/user/1000/vscode-ipc-dcecb6c6-a434-45ca-bb76-4136aa4d9bb7.sock
+VSCODE_IPC_HOOK_CLI = /run/user/1000/vscode-ipc-6b186d98-3211-497e-84f8-243e458f8c51.sock
 # automatic
 *D = $(patsubst %/,%,$(dir $*))
 # environment
@@ -103,7 +103,7 @@ MAKECMDGOALS := all
 # environment
 SHLVL = 3
 # environment
-XDG_SESSION_ID = 3
+XDG_SESSION_ID = 14
 # environment
 USER = yirui
 # environment
@@ -127,7 +127,7 @@ MAKEFLAGS = pqrR
 # environment
 MFLAGS = -pqrR
 # environment
-SSH_CLIENT = 192.168.70.1 54972 22
+SSH_CLIENT = 192.168.70.1 65388 22
 # environment
 MAIL = /var/mail/yirui
 # automatic
@@ -173,7 +173,7 @@ VSCODE_EXTHOST_WILL_SEND_SOCKET = true
 
 # Directories
 
-# . (device 2049, inode 295837): 15 files, no impossibilities.
+# . (device 2049, inode 295895): 15 files, no impossibilities.
 
 # 15 files, no impossibilities in 1 directories.
 
@@ -231,7 +231,7 @@ GNUmakefile:
 # strcache performance: lookups = 26 / hit rate = 11%
 # hash-table stats:
 # Load=23/8192=0%, Rehash=0, Collisions=1/26=4%
-# Finished Make data base on Thu Jun 23 11:40:14 2022
+# Finished Make data base on Thu Jun 23 15:05:50 2022
 
  
 make: *** No rule to make target 'all'.  Stop.
