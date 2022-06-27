@@ -1,2 +1,2 @@
 cacehserver : ../log/log.cpp ./cache_service.cpp ../config.cpp ./cache_server.cpp
-	g++ ../log/log.cpp ./cache_service.cpp ../config.cpp ./cache_server.cpp ../conhash/bin/libconhash.a -l pthread -o cacheserver
+	g++ -g ../log/log.cpp ./cache_service.cpp ../config.cpp ./cache_server.cpp ../conhash/bin/libconhash.a -l pthread -o cacheserver

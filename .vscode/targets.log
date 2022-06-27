@@ -1,4 +1,6 @@
 make all --print-data-base --no-builtin-variables --no-builtin-rules --question
+make: *** No rule to make target 'all'.  Stop.
+
 # GNU Make 4.1
 # Built for x86_64-pc-linux-gnu
 # Copyright (C) 1988-2014 Free Software Foundation, Inc.
@@ -6,7 +8,7 @@ make all --print-data-base --no-builtin-variables --no-builtin-rules --question
 # This is free software: you are free to change and redistribute it.
 # There is NO WARRANTY, to the extent permitted by law.
 
-# Make data base, printed on Thu Jun 23 15:05:50 2022
+# Make data base, printed on Mon Jun 27 14:59:26 2022
 
 # Variables
 
@@ -55,7 +57,7 @@ LC_NAME = zh_CN.UTF-8
 # environment
 VSCODE_CWD = /home/yirui
 # environment
-SSH_CONNECTION = 192.168.70.1 65388 192.168.70.129 22
+SSH_CONNECTION = 192.168.70.1 49315 192.168.70.129 22
 # environment
 PATH = /home/yirui/.vscode-server/bin/30d9c6cd9483b2cc586687151bcbcd635f373630/bin/remote-cli:/home/yirui/Qt5.9.1/Tools/QtCreator/bin:/home/yirui/Qt5.9.1/5.9.1/gcc_64/bin:usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin
 # environment
@@ -75,7 +77,7 @@ VSCODE_PIPE_LOGGING = true
 # environment
 PWD = /home/yirui/projects/dcache
 # environment
-VSCODE_IPC_HOOK_CLI = /run/user/1000/vscode-ipc-6b186d98-3211-497e-84f8-243e458f8c51.sock
+VSCODE_IPC_HOOK_CLI = /run/user/1000/vscode-ipc-5d8b1c3c-7d3e-4e73-bd31-d5873c39260d.sock
 # automatic
 *D = $(patsubst %/,%,$(dir $*))
 # environment
@@ -103,7 +105,7 @@ MAKECMDGOALS := all
 # environment
 SHLVL = 3
 # environment
-XDG_SESSION_ID = 14
+XDG_SESSION_ID = 3
 # environment
 USER = yirui
 # environment
@@ -127,7 +129,7 @@ MAKEFLAGS = pqrR
 # environment
 MFLAGS = -pqrR
 # environment
-SSH_CLIENT = 192.168.70.1 65388 22
+SSH_CLIENT = 192.168.70.1 49315 22
 # environment
 MAIL = /var/mail/yirui
 # automatic
@@ -231,8 +233,6 @@ GNUmakefile:
 # strcache performance: lookups = 26 / hit rate = 11%
 # hash-table stats:
 # Load=23/8192=0%, Rehash=0, Collisions=1/26=4%
-# Finished Make data base on Thu Jun 23 15:05:50 2022
+# Finished Make data base on Mon Jun 27 14:59:26 2022
 
  
-make: *** No rule to make target 'all'.  Stop.
-

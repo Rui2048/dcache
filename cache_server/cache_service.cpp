@@ -300,7 +300,6 @@ void *CacheServer::move_worker(CacheServer *server)
 
 void CacheServer::move()
 {
-    //LOG_DEBUG("move");
     std::vector<std::string> keys;
     if (state == 0) {
         LOG_INFO("start move data");
@@ -385,14 +384,18 @@ int CacheServer::dealwithMasterMsg()
         LOG_ERROR("recv from master_server failed, errno is %d", errno);
         return -1;
     }
-    LOG_DEBUG("recv from master: len = %d \n %s", len, buf);
+    //LOG_DEBUG("recv from master: len = %d\n%s", len, buf);
     std::string temp;
     int i = 0;
     while (buf[i] != '\n') {
         temp += buf[i++];
     }
+
+    //LOG_DEBUG("recv from master: len = %d\n%s", (int)temp.size(), temp.c_str());
+
     if (temp == MOVE_DATA)
     {
+        LOG_DEBUG("MOVE_DATA");
         std::thread t(move_worker, this);
         t.detach();
     }
@@ -417,7 +420,7 @@ int CacheServer::dealwithMasterMsg()
     {
         i++;
         temp = "";
-        while (i < len) {
+        while (buf[i] != '\n') {
             temp += buf[i];
             i++;
         }

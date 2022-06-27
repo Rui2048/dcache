@@ -96,16 +96,18 @@ int MasterServer::Register(sockaddr_in cache_server, int cfd)
     hash_mutex.lock();
     masterHash.conhash_add_CacheServer(cache_server_str);
     hash_mutex.unlock();
+    //4、通知cache_server更新哈希
+    UpdateHash();
+    usleep(1);
     //3、通知迁移数据
     char buf[1024];
-    sprintf(buf, "%s",MOVE_DATA);
+    sprintf(buf, "%s\n", MOVE_DATA);
     for (auto iter : notity) 
     {
         int fd = iter.second;
         send(fd, buf, strlen(buf) + 1, 0);
     }
-    //4、通知cache_server更新哈希
-    UpdateHash();
+    usleep(1);
     //5、通知迁移备份数据
     if (connectList.isExisted(newAddr))
     {
@@ -118,13 +120,14 @@ int MasterServer::Register(sockaddr_in cache_server, int cfd)
         //LOG_DEBUG("next_server %s", next_server_addr.c_str());
         if (next_fd != cfd || prev_fd != cfd)
         {
-            memset(buf, 0, 100);
-            sprintf(buf, "%s\n%s", UPDATE_BACKUP, listenMap[cfd].c_str());
-            send(prev_fd, buf, strlen(buf), 0); //通知前驱服务器开始备份
+            memset(buf, 0, sizeof(buf));
+            sprintf(buf, "%s\n%s\n", UPDATE_BACKUP, listenMap[cfd].c_str());
+            send(prev_fd, buf, strlen(buf) + 1, 0); //通知前驱服务器开始备份
+            usleep(1);
             LOG_DEBUG("notice %s Update Backup\n%s", prev_server_addr.c_str(), buf);
-            memset(buf, 0, 100);
-            sprintf(buf, "%s\n%s", UPDATE_BACKUP, listenMap[next_fd].c_str(), buf);
-            send(cfd, buf, strlen(buf), 0); //通知新注册的服务器开始备份
+            memset(buf, 0, sizeof(buf));
+            sprintf(buf, "%s\n%s\n", UPDATE_BACKUP, listenMap[next_fd].c_str(), buf);
+            send(cfd, buf, strlen(buf) + 1, 0); //通知新注册的服务器开始备份
             LOG_DEBUG("notice %s Update Backup\n%s", newAddr.c_str(), buf);
         }
     }
@@ -336,15 +339,17 @@ int MasterServer::dealwithCacheServer(int cfd)
             m_conn_lock.unlock();
             //通知更新一致性哈希
             UpdateHash();
+            usleep(1);
             if (next_fd == cfd || prev_fd == cfd)
                 return 0;
             //通知恢复备份
             memset(buf, 0, sizeof(buf));
-            sprintf(buf, "%s", RECOVER_BACKUP);
+            sprintf(buf, "%s\n", RECOVER_BACKUP);
             send(next_fd, buf, strlen(buf), 0); //通知后继服务器将备份数据恢复
+            usleep(1);
             LOG_DEBUG("notic recover backup %s", next_server_addr.c_str());
             memset(buf, 0, sizeof(buf));
-            sprintf(buf, "%s\n%s", UPDATE_BACKUP, listenMap[next_fd].c_str());
+            sprintf(buf, "%s\n%s\n", UPDATE_BACKUP, listenMap[next_fd].c_str());
             send(prev_fd, buf, strlen(buf), 0); //通知前驱服务器重新备份到后继服务器
             LOG_DEBUG("notic update backup %s", prev_server_addr.c_str());
         }
