@@ -10,6 +10,7 @@
 #include "../log/log.h"
 #include "../consistent_hash.h"
 #include "../config.h"
+#include "serverList.h"
 
 namespace Request{
     #define REGISTER 0 //注册
@@ -28,11 +29,16 @@ class MasterServer
    int GetDistribute(sockaddr_in client_addr, std::string key);
     //新的cache_server注册
     int Register(sockaddr_in cache_server, int cfd);
-    //心跳检测
-    int HeartBeat();
+    //通知cache_server更新一致性哈希
+    int UpdateHash();
 
+    int startListen();
     //master_server的事件循环
     int EventLoop();
+    int dealwithNewConn();
+    int dealwithClient();
+    int dealwithCacheServer(int cfd);
+
 
     //epoll相关
     private:
@@ -46,8 +52,10 @@ class MasterServer
     //与cache_server之间的通信
     int lfd;
     locker m_conn_lock;  //新cache_server注册时的互斥访问
-    std::map<std::string, int> registedMap;  //已经注册的cache_server的ip+port -> socket fd;
-    std::map<int, sockaddr_in> connectedMap; //已经注册的cache_server的sockfd -> sockaddr_in
+    std::map<std::string, int> registedMap;  //已经注册的cache_server的ip_port -> fd;
+    std::map<int, std::string> connectedMap; //已经连接的cache_server的fd -> ip_port
+    std::map<int, std::string> listenMap;
+    ServerList<std::string> connectList; //已经注册的cache_server的ip_port双向环形链表
 
     int port_tcp = 7010;  //master_server默认监听端口7010
     sockaddr_in master_tcp_addr;

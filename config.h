@@ -5,6 +5,10 @@
 #include <stdlib.h>
 
 //cache_server的通信码
+#define BACKUP_INVALID "backup_invalid" //备份失效
+#define UPDATE_HASH "update_hash" 
+#define UPDATE_BACKUP "update_backup"
+#define RECOVER_BACKUP "recover_backup"
 #define MOVE_DATA "move_data"
 #define SET_VALUE "set_value"
 #define SET_BACKUP_VALUE "set_backup_value"

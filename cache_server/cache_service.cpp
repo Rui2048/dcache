@@ -120,7 +120,6 @@ int CacheServer::eventLoop()
 {
     epoll_event evs[1024];
     int ev_size = sizeof(evs) / sizeof(epoll_event);
-    char buf[1024];
     while (!shutdown)
     {
         int num = epoll_wait(epfd, evs, ev_size, 0);  //不阻塞
@@ -239,14 +238,9 @@ int CacheServer::setBackupValue(std::string key, std::string value, std::string 
     return 0;
 }
 
-void *CacheServer::move_worker(CacheServer *server, std::vector<std::string> ip_ports)
-{   
-    server->move(ip_ports);
-}
-
-void CacheServer::move(std::vector<std::string> ip_ports)
+int CacheServer::updateHash(std::vector<std::string> ip_ports)
 {
-    //根据目前在线的cache_server重新构建一致性哈希
+    LOG_INFO("start updateHash total:%d", (int)ip_ports.size());
     hash_mutex.lock();
     if (cacheServerHash != nullptr) {
         delete cacheServerHash;
@@ -257,8 +251,66 @@ void CacheServer::move(std::vector<std::string> ip_ports)
         LOG_INFO("cache_server conhash add ip_port %s", ip_port.c_str());
     }
     hash_mutex.unlock();
+    LOG_INFO("finish updateHash total:%d\n", (int)ip_ports.size());
+    return 0;
+}
+
+void *CacheServer::updateBackup(CacheServer *server, std::string ip_port)
+{
+    server->update(ip_port);
+}
+
+void CacheServer::update(std::string ip_port)
+{
+    LOG_INFO("start update backup to %s", ip_port.c_str());
+    sockaddr_in dst_addr = str2sock_addr(ip_port);
+    int cfd = socket(AF_INET, SOCK_STREAM, 0);
+    int ret = connect(cfd, (sockaddr*)(&dst_addr), sizeof(dst_addr));
+    if (ret == -1)
+    {
+        LOG_ERROR("connect to backup cache_server failed %s , errno is %d", ip_port.c_str(), errno);
+        return;
+    }
+    char buf[1024];
+    memset(buf, 0, sizeof(buf));
+    sprintf(buf, "%s", BACKUP_INVALID);
+    send(cfd, buf, strlen(buf), 0); //通知备份服务器原备份失效，准备接收新的备份
+    
     std::vector<std::string> keys = lru.lru_keys_oneshot();
-    lru_mutex.lock();
+    for (auto key : keys) 
+    {
+        memset(buf, 0, sizeof(buf));
+        sprintf(buf, "%s\n%s\n%s", SET_BACKUP_VALUE, key.c_str(), lru.get(key).c_str());
+        send(cfd, buf, strlen(buf), 0); //备份
+    }
+    LOG_INFO("update backup finish\n");
+}
+
+int CacheServer::recoverBackup()
+{
+    state = 1;
+    std::thread t(move_worker, this);
+    t.detach();
+}
+
+void *CacheServer::move_worker(CacheServer *server)
+{   
+    server->move();
+}
+
+void CacheServer::move()
+{
+    std::vector<std::string> keys;
+    if (state == 0) {
+        LOG_INFO("start move data");
+        keys = lru.lru_keys_oneshot();
+        lru_mutex.lock();
+    }
+    else {
+        LOG_INFO("start recover backup");
+        keys = lru_backup.lru_keys_oneshot();
+        lru_backup_mutex.lock();
+    }
     for(auto key : keys)
         {
             int cfd = socket(AF_INET, SOCK_STREAM, 0); //用于cache_server之间交换数据
@@ -304,14 +356,22 @@ void CacheServer::move(std::vector<std::string> ip_ports)
                     
             }
         }
-        lru_mutex.unlock();
-        LOG_INFO("End move");
-
+        if (state == 0) {
+            LOG_INFO("move data finish\n");
+            lru_mutex.unlock();
+        }
+        else {
+            LOG_INFO("recover backup finish\n");
+            lru_backup_mutex.unlock();
+            state = 0;
+            backup_invalid = 1; //原备份已失效
+        }
 }
 
 int CacheServer::dealwithMasterMsg()
 {
     char buf[1024];
+    memset(buf, 0, sizeof(buf));
     int len = recv(master_sockfd, buf, sizeof(buf), 0);
     if (len == 0) 
     {
@@ -324,14 +384,23 @@ int CacheServer::dealwithMasterMsg()
         LOG_ERROR("recv from master_server failed, errno is %d", errno);
         return -1;
     }
+    //LOG_DEBUG("recv from master: len = %d\n%s", len, buf);
     std::string temp;
     int i = 0;
     while (buf[i] != '\n') {
         temp += buf[i++];
     }
+
+    //LOG_DEBUG("recv from master: len = %d\n%s", (int)temp.size(), temp.c_str());
+
     if (temp == MOVE_DATA)
     {
-        LOG_INFO("start move data");
+        LOG_DEBUG("MOVE_DATA");
+        std::thread t(move_worker, this);
+        t.detach();
+    }
+    else if (temp == UPDATE_HASH)
+    {
         std::vector<std::string> ip_ports;
         i++;
         temp = "";
@@ -345,9 +414,23 @@ int CacheServer::dealwithMasterMsg()
             }
             i++;
         }
-        std::thread t(move_worker, this, ip_ports);
+        updateHash(ip_ports);
+    }
+    else if (temp == UPDATE_BACKUP)
+    {
+        i++;
+        temp = "";
+        while (buf[i] != '\n') {
+            temp += buf[i];
+            i++;
+        }
+        thread t(updateBackup, this, temp);
         t.detach();
     }
+    else if (temp == RECOVER_BACKUP)
+    {
+        recoverBackup();
+    }  
     
 }
 
@@ -357,7 +440,7 @@ int CacheServer::dealwithClientMsg(int cfd)
     int len = recv(cfd, buf, sizeof(buf), 0);
     if (len == 0) 
     {
-        LOG_INFO("cilent or cache_server disconnected %s", connectedMap[cfd].c_str());
+        LOG_INFO("tcp disconnected %s", connectedMap[cfd].c_str());
         sockfd_mutex.lock();
         connectedMap.erase(cfd);
         sockfd_mutex.unlock();
@@ -374,23 +457,30 @@ int CacheServer::dealwithClientMsg(int cfd)
     while (buf[i] != '\n') {
         opt += buf[i++];
     }
-    i++;
-    while (i < len && buf[i] != '\n') {
-        key += buf[i];
-        i++;
+    if (opt == BACKUP_INVALID) { //原备份失效
+        std::vector<std::string> keys = lru_backup.lru_keys_oneshot();
+        
     }
-    if (opt == SET_VALUE || opt == SET_BACKUP_VALUE)
-    while (i < len && buf[i] != '\n') {
-        value += buf[i];
+    else { //set value
         i++;
+        while (i < len && buf[i] != '\n') {
+            key += buf[i];
+            i++;
+        }
+        if (opt == SET_VALUE || opt == SET_BACKUP_VALUE)
+        while (i < len && buf[i] != '\n') {
+            value += buf[i];
+            i++;
+        }
+        Request request(opt, connectedMap[cfd], key, value, cfd);
+        bool ret = append(request); //将客户端请求加入请求队列
+        if (ret ==false) 
+        {
+            LOG_ERROR("threadpool append failed on request from %s", connectedMap[cfd]);
+            return -1;
+        } 
     }
-    Request request(opt, connectedMap[cfd], key, value, cfd);
-    bool ret = append(request); //将客户端请求加入请求队列
-    if (ret ==false) 
-    {
-        LOG_ERROR("threadpool append failed on request from %s", connectedMap[cfd]);
-        return -1;
-    } 
+
 }
 
 int CacheServer::dealwithListenMsg()
